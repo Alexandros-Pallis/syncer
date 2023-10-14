@@ -3,12 +3,14 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/fsnotify/fsnotify"
 	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/fsnotify/fsnotify"
+	"github.com/gookit/color"
 )
 
 var watcher *fsnotify.Watcher
@@ -35,9 +37,9 @@ func main() {
 	flag.StringVar(&syncer.GroupName, "group", "www-data", "Group( default www-data )")
 	flag.StringVar(&syncer.ContainerName, "container-name", "", "Container name")
 	flag.Parse()
-	log.Println("Watching... ")
+	color.Cyan.Println("Watching... ")
 	checkDocker()
-	log.Println("Host path: ", syncer.HostPath)
+	color.Cyan.Print("Host path: ", syncer.HostPath)
 	watchDir(syncer)
 }
 
@@ -65,7 +67,7 @@ func watchDir(syncer Syncer) {
 				if !ok {
 					return
 				}
-				log.Println("error:", err)
+                color.Red.Print("error:", err)
 			}
 		}
 	}()
@@ -91,7 +93,7 @@ func dirWalker(path string, fi os.FileInfo, err error) error {
 
 func eventHandler(event fsnotify.Event, syncer Syncer) {
 	if strings.HasSuffix(event.Name, "~") {
-		log.Println("Skipping: ", event.Name)
+        color.Cyan.Println("Skipping: ", event.Name)
 		return
 	}
 	if event.Has(fsnotify.Write) {
@@ -129,42 +131,41 @@ func handleRename(event fsnotify.Event, syncer Syncer) {
 func copyFromHostToContainer(event fsnotify.Event, syncer Syncer) {
 	relativePath, err := getRelativePath(event, syncer)
 	if err != nil {
-		log.Println(err.Error())
 		return
 	}
 	_, err = exec.Command("docker", "cp", event.Name, fmt.Sprintf("%s:%s", syncer.ContainerName, syncer.ContainerPath)).Output()
 	if err != nil {
-		log.Println(err.Error())
+		color.Red.Println(err.Error(), "can't copy to container")
 		return
 	}
-	log.Printf("Copied: %s to %s:%s", relativePath, syncer.ContainerName, syncer.ContainerPath+"/"+relativePath)
+	message := fmt.Sprintf("Copied: %s to %s:%s", relativePath, syncer.ContainerName, syncer.ContainerPath+"/"+relativePath)
+	color.Green.Println(message)
 }
 
 func removeFromContainer(event fsnotify.Event, syncer Syncer) {
 	relativePath, err := getRelativePath(event, syncer)
 	if err != nil {
-		log.Println(err)
 		return
 	}
 	_, err = exec.Command("docker", "exec", syncer.ContainerName, "rm", syncer.ContainerPath+"/"+relativePath).Output()
 	if err != nil {
-		log.Println(err.Error())
+		color.Red.Println(err.Error(), "cant remove from container")
 		return
 	}
-	log.Printf("Removed: %s/%s", syncer.ContainerPath, relativePath)
+	message := fmt.Sprintf("Removed: %s/%s", syncer.ContainerPath, relativePath)
+	color.Red.Println(message)
 }
 
 func applyPermissionsToFile(event fsnotify.Event, s Syncer) {
 	relativePath, err := getRelativePath(event, s)
 	if err != nil {
-		log.Println(err.Error())
 		return
 	}
-    userGroup := fmt.Sprintf("%s:%s", s.UserName, s.GroupName)
-    containerAbsolutePath := fmt.Sprintf("%s/%s", s.ContainerPath, relativePath)
-    _, err = exec.Command("docker", "exec", s.ContainerName, "chown", userGroup, containerAbsolutePath).Output()
+	userGroup := fmt.Sprintf("%s:%s", s.UserName, s.GroupName)
+	containerAbsolutePath := fmt.Sprintf("%s/%s", s.ContainerPath, relativePath)
+	_, err = exec.Command("docker", "exec", s.ContainerName, "chown", userGroup, containerAbsolutePath).Output()
 	if err != nil {
-		log.Println(err.Error())
+		color.Red.Println(err.Error(), "can't remove from container")
 		return
 	}
 }
@@ -172,7 +173,8 @@ func applyPermissionsToFile(event fsnotify.Event, s Syncer) {
 func checkDocker() {
 	_, err := exec.Command("docker", "-v").Output()
 	if err != nil {
-		log.Fatal("Docker command not found. Make sure docker is installed and running.")
+		message := color.Red.Sprint("Docker command not found. Make sure docker is installed and running.")
+		log.Fatal(message)
 	}
 }
 
